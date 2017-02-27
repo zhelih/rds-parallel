@@ -106,7 +106,6 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   int world_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-  chrono::time_point<chrono::steady_clock> start = chrono::steady_clock::now(); // C++11 only
   should_exit = false;
   uint n = g->nr_nodes;
   // order V
@@ -116,6 +115,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
 
   if(world_rank == 0) // master
   {
+    chrono::time_point<chrono::steady_clock> start = chrono::steady_clock::now(); // C++11 only
     // synchronize here
     for(int i = 1; i < world_size; ++i)
       MPI_Recv(NULL, 0, MPI_BYTE, i, READYTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -134,7 +134,9 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       MPI_Recv(&buf, 3, MPI_INT, MPI_ANY_SOURCE, DONETAG, MPI_COMM_WORLD, &st);
       rec_left--;
       printf("Master : received result from slave %d : mu[%d] = %d, lb = %d\n", st.MPI_SOURCE, buf[0], buf[1], buf[2]);
-      //TODO update mu[i] and lb here
+      lb = max(lb, buf[2]);
+      lb_a = lb;
+      mu[buf[0]] = buf[1];
       if(cur_node >= 0)
       {
         MPI_Send(&cur_node, 1, MPI_INT, st.MPI_SOURCE, WORKTAG, MPI_COMM_WORLD); // send new job
@@ -144,8 +146,9 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
     }
    for(int i = 1; i < world_size; ++i)
       MPI_Send(NULL, 0, MPI_BYTE, i, EXITTAG, MPI_COMM_WORLD);
-    printf("Master done, lb = %d, mu[0] = %d\n", 0, 0); // TODO out
-
+    printf("Master done, lb = %d, mu[0] = %d\n", lb, mu[0]); // TODO when CTRL-C
+    chrono::duration<double> d = chrono::steady_clock::now() - start;
+    printf("rds: time elapsed = %.8lf secs\n", d.count());
   } else { // slave
     MPI_Send(NULL, 0, MPI_BYTE, 0, READYTAG, MPI_COMM_WORLD); // report master ready
     while(!should_exit)
@@ -214,7 +217,5 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
   uint fres = mu[i+1]; // last
   delete [] mu;*/
   uint fres = 0;
-  chrono::duration<double> d = chrono::steady_clock::now() - start;
-  printf("rds: time elapsed = %.8lf secs\n", d.count());
   return fres;
 }
