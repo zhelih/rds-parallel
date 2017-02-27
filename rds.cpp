@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <atomic>
 #include <chrono>
+#include <mpi.h>
 
 #include <csignal> // Display best result for SIGINT before exit
 
@@ -19,6 +20,11 @@ typedef unsigned int uint;
 static uint lb;
 
 atomic_uint lb_a;
+
+#define READYTAG 1
+#define WORKTAG  2
+#define DONETAG  3
+#define EXITTAG  4
 
 // for debug
 void print_cont(const vector<uint>& c)
@@ -95,6 +101,11 @@ uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
 
 uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
 {
+  MPI_Init(NULL, NULL);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   chrono::time_point<chrono::steady_clock> start = chrono::steady_clock::now(); // C++11 only
   should_exit = false;
   uint n = g->nr_nodes;
@@ -103,6 +114,64 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
   lb_a = 0;
   uint *mu = new uint[n];
 
+  if(world_rank == 0) // master
+  {
+    // synchronize here
+    for(int i = 1; i < world_size; ++i)
+      MPI_Recv(NULL, 0, MPI_BYTE, i, READYTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    printf("Master: all slaves ready!\n");
+    int cur_node = n-1;
+    int rec_left = cur_node;
+    for(int i = 1; cur_node >= 0 && i < world_size; ++i)
+    {
+      MPI_Send(&cur_node, 1, MPI_INT, i, WORKTAG, MPI_COMM_WORLD);
+      cur_node--;
+    } // tasks send
+    while(cur_node >= 0 || rec_left >= 0)
+    {
+      int buf[3];
+      MPI_Status st;
+      MPI_Recv(&buf, 3, MPI_INT, MPI_ANY_SOURCE, DONETAG, MPI_COMM_WORLD, &st);
+      rec_left--;
+      printf("Master : received result from slave %d : mu[%d] = %d, lb = %d\n", st.MPI_SOURCE, buf[0], buf[1], buf[2]);
+      //TODO update mu[i] and lb here
+      if(cur_node >= 0)
+      {
+        MPI_Send(&cur_node, 1, MPI_INT, st.MPI_SOURCE, WORKTAG, MPI_COMM_WORLD); // send new job
+        //TODO Send slaves new updates
+        cur_node--;
+      }
+    }
+   for(int i = 1; i < world_size; ++i)
+      MPI_Send(NULL, 0, MPI_BYTE, i, EXITTAG, MPI_COMM_WORLD);
+    printf("Master done, lb = %d, mu[0] = %d\n", 0, 0); // TODO out
+
+  } else { // slave
+    MPI_Send(NULL, 0, MPI_BYTE, 0, READYTAG, MPI_COMM_WORLD); // report master ready
+    while(!should_exit)
+    {
+      int cur_i;
+      MPI_Status st;
+      MPI_Recv(&cur_i, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+      switch(st.MPI_TAG)
+      {
+        case WORKTAG:
+          printf("Slave %d : received work %d\n", world_rank, cur_i);
+          //TODO start working
+          int buf[3]; // TODO assing the result
+          buf[0] = cur_i;
+          MPI_Send(&buf, 3, MPI_INT, 0, DONETAG, MPI_COMM_WORLD);
+          break;
+        case EXITTAG:
+          should_exit = true;
+          printf("Slave %d : exiting...\n", world_rank);
+          break;
+        default:
+          printf("Slave %d : wrong message tag %d, ignoring...\n", world_rank, st.MPI_TAG);
+      }
+    }
+  }
+/*
   int i;
   for(i = n-1; i >= 0; --i)
   {
@@ -143,7 +212,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
   }
   printf("RDS done\n");
   uint fres = mu[i+1]; // last
-  delete [] mu;
+  delete [] mu;*/
+  uint fres = 0;
   chrono::duration<double> d = chrono::steady_clock::now() - start;
   printf("rds: time elapsed = %.8lf secs\n", d.count());
   return fres;

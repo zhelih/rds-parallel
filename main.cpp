@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
     }
     vector<uint> res_p;
     uint res = rds(v, g, res_p, time_lim);
-    printf("Solution verification: ");
+/*    printf("Solution verification: ");
     if(v->check_solution(g, res_p))
       printf("CORRECT\n");
     else
@@ -88,7 +88,7 @@ int main(int argc, char* argv[])
     for(uint i = 0; i < res_p.size(); ++i)
       printf("%u ", res_p[i]+1);
     printf("\nRDS returned res = %d\n", res);
-
+*/
 /*    printf("Graph:\n");
     for(uint i = 0; i < res_p.size(); ++i)
       for(uint j = i+1; j < res_p.size(); ++j)
