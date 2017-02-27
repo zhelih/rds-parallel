@@ -21,10 +21,11 @@ static uint lb;
 
 atomic_uint lb_a;
 
-#define READYTAG 1
-#define WORKTAG  2
-#define DONETAG  3
-#define EXITTAG  4
+#define READYTAG  1
+#define WORKTAG   2
+#define DONETAG   3
+#define EXITTAG   4
+#define UPDATETAG 5
 
 // for debug
 void print_cont(const vector<uint>& c)
@@ -44,7 +45,7 @@ void print_lb_atomic(int signal)
 static uint iter = 0;
 static bool should_exit = false;
 
-uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint& weight_p, const uint* mu, verifier *v, graph* g, vector<uint>& res, int level, const uint time_lim)
+uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint& weight_p, uint* mu, verifier *v, graph* g, vector<uint>& res, int level, const uint time_lim)
 {
   if(should_exit)
     return lb;
@@ -62,8 +63,20 @@ uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
   while(c[level].size() > 0)
   {
     iter++;
-    if(iter % 1000 == 0 && time_lim > 0)
+    if(iter % 1000 == 0) //&& time_lim > 0)
     {
+      int flag = false; MPI_Status st;
+      MPI_Iprobe(0, UPDATETAG, MPI_COMM_WORLD, &flag, &st); // TODO EXITTAG
+      if(flag) // there is a message from master // FIXME copypaste
+      {
+        int buf[3];
+        MPI_Recv(&buf, 3, MPI_INT, 0, UPDATETAG, MPI_COMM_WORLD, &st);
+        int cur_i = buf[0];
+        for(int i = cur_i; i >= 0; --i)
+          mu[i] = max(mu[i], buf[1]);
+        lb = max(lb, buf[2]);
+        printf("Slave %%d : Received update from master, mu[%d] = %d, lb = %d\n", cur_i, mu[cur_i], lb);
+      }
 /*      chrono::duration<double> d = chrono::steady_clock::now() - start;
       if(d.count() >= (double)time_lim)
       {
@@ -113,6 +126,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
   lb = 0; // best solution size found so far
   lb_a = 0;
   uint *mu = new uint[n];
+  for(int i = 0; i < n; ++i)
+    mu[i] = 1;
 
   if(world_rank == 0) // master
   {
@@ -142,6 +157,12 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       {
         MPI_Send(&cur_node, 1, MPI_INT, st.MPI_SOURCE, WORKTAG, MPI_COMM_WORLD); // send new job
         //TODO Send slaves new updates
+        for(int i = 1; i < world_size; ++i)
+        {
+//          MPI_Request req;
+          MPI_Send(&buf, 3, MPI_INT, i, UPDATETAG, MPI_COMM_WORLD);
+          //MPI_Request_free(req); FIXME memory leak
+        }
         cur_node--;
       }
     }
@@ -155,13 +176,15 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
     while(!should_exit)
     {
       int cur_i;
+      int buf[3];
       MPI_Status st;
-      MPI_Recv(&cur_i, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+      MPI_Recv(&buf, 3, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
       vector<vector<uint> > c; vector<uint> weight_c(g->nr_nodes);
       vector<uint> p; uint weight_p = 0;
       switch(st.MPI_TAG)
       {
         case WORKTAG:
+          cur_i = buf[0];
           printf("Slave %d : received work %d\n", world_rank, cur_i);
           // form candidate set
           // take vertices from v \in {i+1, n} for which pair (i,v) satisfies \Pi
@@ -185,7 +208,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
           reverse(c[0].begin(), c[0].end()); // for efficient deletion of min element
           p.push_back(cur_i); weight_p += g->weight(cur_i);
           v->init_aux(g, cur_i, c[0]);
-          printf("i = %u, c.size = %lu, ", cur_i, c[0].size());
+          printf("i = %u, c.size = %lu\n", cur_i, c[0].size());
           mu[cur_i] = find_max(c, weight_c, p, weight_p, mu, v, g, res, 0, time_lim);
           printf("mu[%d] = %d\n", cur_i, mu[cur_i]);
           v->free_aux();
@@ -195,11 +218,18 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
           buf[2] = lb;
           MPI_Send(&buf, 3, MPI_INT, 0, DONETAG, MPI_COMM_WORLD);
           break;
+        case UPDATETAG:
+          int cur_i = buf[0];
+          for(int i = cur_i; i >= 0; --i)
+            mu[i] = max(mu[i], buf[1]);
+          lb = max(lb, buf[2]);
+          printf("Slave %%d : Received update from master, mu[%d] = %d, lb = %d\n", cur_i, mu[cur_i], lb);
+          break;
         case EXITTAG:
           should_exit = true;
           printf("Slave %d : exiting...\n", world_rank);
           break;
-        default:
+        default: // FIXME UPDATETAG ?
           printf("Slave %d : wrong message tag %d, ignoring...\n", world_rank, st.MPI_TAG);
       }
     }
