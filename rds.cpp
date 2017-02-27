@@ -44,7 +44,7 @@ void print_lb_atomic(int signal)
 static uint iter = 0;
 static bool should_exit = false;
 
-uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint& weight_p, const uint* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
+uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint& weight_p, const uint* mu, verifier *v, graph* g, vector<uint>& res, int level, const uint time_lim)
 {
   if(should_exit)
     return lb;
@@ -64,12 +64,13 @@ uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
     iter++;
     if(iter % 1000 == 0 && time_lim > 0)
     {
-      chrono::duration<double> d = chrono::steady_clock::now() - start;
+/*      chrono::duration<double> d = chrono::steady_clock::now() - start;
       if(d.count() >= (double)time_lim)
       {
         should_exit = true;
         return lb;
-      }
+      }*/
+      ;
     }
 
     if(weight_c[level] + weight_p <= lb) // Prune 1
@@ -91,7 +92,7 @@ uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
         weight_c[level+1] += g->weight(c[level][it2]);
       }
     }
-    lb = find_max(c, weight_c, p, weight_p, mu, v, g, res, level+1, start, time_lim);
+    lb = find_max(c, weight_c, p, weight_p, mu, v, g, res, level+1, time_lim);
     lb_a = lb;
     p.pop_back(); weight_p -= g->weight(i);
     v->undo_aux(g, p, i, c[level]);
@@ -156,13 +157,42 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       int cur_i;
       MPI_Status st;
       MPI_Recv(&cur_i, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+      vector<vector<uint> > c; vector<uint> weight_c(g->nr_nodes);
+      vector<uint> p; uint weight_p = 0;
       switch(st.MPI_TAG)
       {
         case WORKTAG:
           printf("Slave %d : received work %d\n", world_rank, cur_i);
-          //TODO start working
-          int buf[3]; // TODO assing the result
+          // form candidate set
+          // take vertices from v \in {i+1, n} for which pair (i,v) satisfies \Pi
+          // first iteration c is empty, that must set bound to 1
+          c.resize(g->nr_nodes);
+          for(uint j = 0; j < g->nr_nodes; ++j)
+          {
+            c[j].reserve(g->nr_nodes);
+            c[j].resize(0);
+            weight_c[j] = 0;
+          }
+          for(uint j = cur_i+1; j < n; ++j)
+          {
+            if(v->check_pair(g, cur_i, j))
+            {
+              // add to C
+              c[0].push_back(j);
+              weight_c[0] += g->weight(j);
+            }
+          }
+          reverse(c[0].begin(), c[0].end()); // for efficient deletion of min element
+          p.push_back(cur_i); weight_p += g->weight(cur_i);
+          v->init_aux(g, cur_i, c[0]);
+          printf("i = %u, c.size = %lu, ", cur_i, c[0].size());
+          mu[cur_i] = find_max(c, weight_c, p, weight_p, mu, v, g, res, 0, time_lim);
+          printf("mu[%d] = %d\n", cur_i, mu[cur_i]);
+          v->free_aux();
+          int buf[3];
           buf[0] = cur_i;
+          buf[1] = mu[cur_i];
+          buf[2] = lb;
           MPI_Send(&buf, 3, MPI_INT, 0, DONETAG, MPI_COMM_WORLD);
           break;
         case EXITTAG:
