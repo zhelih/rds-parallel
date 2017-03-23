@@ -12,13 +12,16 @@
 #ifndef max
 #define max(a,b) (((a)>(b))?(a):(b))
 #endif
+#ifndef min
+#define min(a,b) (((a)<(b))?(a):(b))
+#endif
 
 using namespace std;
 
 typedef unsigned int uint;
 
 static uint lb;
-
+static uint slave_i;
 atomic_uint lb_a;
 
 #define READYTAG  1
@@ -45,7 +48,7 @@ void print_lb_atomic(int signal)
 static uint iter = 0;
 static bool should_exit = false;
 
-uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint& weight_p, uint* mu, verifier *v, graph* g, vector<uint>& res, int level, const uint time_lim)
+uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint& weight_p, uint* mu, verifier *v, graph* g, vector<uint>& res, int level, int world_rank)
 {
   if(should_exit)
     return lb;
@@ -72,10 +75,18 @@ uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
         int buf[3];
         MPI_Recv(&buf, 3, MPI_INT, 0, UPDATETAG, MPI_COMM_WORLD, &st);
         int cur_i = buf[0];
-        for(int i = cur_i; i >= 0; --i)
-          mu[i] = max(mu[i], buf[1]);
-        lb = max(lb, buf[2]);
-        printf("Slave %%d : Received update from master, mu[%d] = %d, lb = %d\n", cur_i, mu[cur_i], lb);
+        for(int i = cur_i; i < g->nr_nodes; ++i)
+          mu[i] = min(mu[i], buf[1]);
+        printf("Slave %d : Received update from master, mu[%d] = %d, lb = %d", world_rank, cur_i, mu[cur_i], buf[2]);
+        if(cur_i < slave_i) // update lb only for prehistory
+        {
+          if(lb < buf[2])
+          {
+            lb = buf[2];
+            printf(" (lb updated)");
+          }
+        }
+        printf("\n");
       }
 /*      chrono::duration<double> d = chrono::steady_clock::now() - start;
       if(d.count() >= (double)time_lim)
@@ -105,7 +116,7 @@ uint find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
         weight_c[level+1] += g->weight(c[level][it2]);
       }
     }
-    lb = find_max(c, weight_c, p, weight_p, mu, v, g, res, level+1, time_lim);
+    lb = find_max(c, weight_c, p, weight_p, mu, v, g, res, level+1, world_rank);
     lb_a = lb;
     p.pop_back(); weight_p -= g->weight(i);
     v->undo_aux(g, p, i, c[level]);
@@ -127,7 +138,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
   lb_a = 0;
   uint *mu = new uint[n];
   for(int i = 0; i < n; ++i)
-    mu[i] = 1;
+    mu[i] = n+1;
 
   if(world_rank == 0) // master
   {
@@ -152,17 +163,16 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       printf("Master : received result from slave %d : mu[%d] = %d, lb = %d\n", st.MPI_SOURCE, buf[0], buf[1], buf[2]);
       lb = max(lb, buf[2]);
       lb_a = lb;
-      mu[buf[0]] = buf[1];
+      mu[buf[0]] = min(mu[buf[0]], buf[1]);
+      buf[2] = lb;
+      for(int i = 1; i < world_size; ++i)
+      {
+        MPI_Send(&buf, 3, MPI_INT, i, UPDATETAG, MPI_COMM_WORLD);
+      }
+
       if(cur_node >= 0)
       {
         MPI_Send(&cur_node, 1, MPI_INT, st.MPI_SOURCE, WORKTAG, MPI_COMM_WORLD); // send new job
-        //TODO Send slaves new updates
-        for(int i = 1; i < world_size; ++i)
-        {
-//          MPI_Request req;
-          MPI_Send(&buf, 3, MPI_INT, i, UPDATETAG, MPI_COMM_WORLD);
-          //MPI_Request_free(req); FIXME memory leak
-        }
         cur_node--;
       }
     }
@@ -186,6 +196,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         case WORKTAG:
           cur_i = buf[0];
           printf("Slave %d : received work %d\n", world_rank, cur_i);
+          slave_i = cur_i;
           // form candidate set
           // take vertices from v \in {i+1, n} for which pair (i,v) satisfies \Pi
           // first iteration c is empty, that must set bound to 1
@@ -209,7 +220,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
           p.push_back(cur_i); weight_p += g->weight(cur_i);
           v->init_aux(g, cur_i, c[0]);
           printf("i = %u, c.size = %lu\n", cur_i, c[0].size());
-          mu[cur_i] = find_max(c, weight_c, p, weight_p, mu, v, g, res, 0, time_lim);
+          mu[cur_i] = find_max(c, weight_c, p, weight_p, mu, v, g, res, 0, world_rank);
           printf("mu[%d] = %d\n", cur_i, mu[cur_i]);
           v->free_aux();
           int buf[3];
@@ -220,10 +231,10 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
           break;
         case UPDATETAG:
           int cur_i = buf[0];
-          for(int i = cur_i; i >= 0; --i)
-            mu[i] = max(mu[i], buf[1]);
+          for(int i = cur_i; i < n; ++i)
+            mu[i] = min(mu[i], buf[1]);
           lb = max(lb, buf[2]);
-          printf("Slave %%d : Received update from master, mu[%d] = %d, lb = %d\n", cur_i, mu[cur_i], lb);
+          printf("Slave %d : Received update from master, mu[%d] = %d, lb = %d\n", world_rank, cur_i, mu[cur_i], lb);
           break;
         case EXITTAG:
           should_exit = true;
