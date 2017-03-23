@@ -150,6 +150,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       MPI_Recv(&buf, 3, MPI_INT, MPI_ANY_SOURCE, DONETAG, MPI_COMM_WORLD, &st);
       rec_left--;
       printf("Master : received result from slave %d : mu[%d] = %d, lb = %d\n", st.MPI_SOURCE, buf[0], buf[1], buf[2]);
+      chrono::duration<double> d = chrono::steady_clock::now() - start;
+      printf("Master : time elapsed %.8lf secs\n", d.count());
       lb = max(lb, buf[2]);
       lb_a = lb;
       mu[buf[0]] = buf[1];
