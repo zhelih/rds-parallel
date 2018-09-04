@@ -1,3 +1,2 @@
 all:
-	mpicxx graph.cpp verifier.cpp rds.cpp main.cpp -O2 -lm -o rds -Wall -std=c++14
-#	g++ tester.cpp -O2 -o tester -Wall -std=c++11
+	mpicxx graph.cpp verifier.cpp rds.cpp main.cpp -O3 -lm -o rds -Wall -Wextra -std=c++11 -fopenmp

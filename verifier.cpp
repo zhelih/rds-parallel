@@ -20,6 +20,10 @@ bool clique::check_solution(graph* g, const std::vector<uint>& res) const
         return false;
   return true;
 }
+verifier* clique::clone() const
+{
+  return new clique(*this);
+}
 
 // stable
 bool stable::check_pair(graph* g, uint i, uint j) const { return !g->is_edge(i,j); }
@@ -37,6 +41,10 @@ bool stable::check_solution(graph* g, const std::vector<uint>& res) const
       if(g->is_edge(res[i], res[j]))
         return false;
   return true;
+}
+verifier* stable::clone() const
+{
+  return new stable(*this);
 }
 
 // iuc
@@ -61,6 +69,10 @@ bool iuc::check_solution(graph* g, const std::vector<uint>& res) const {
           return false;
       }
   return true;
+}
+verifier* iuc::clone() const
+{
+  return new iuc(*this);
 }
 
 //s-defective clique
@@ -109,6 +121,10 @@ bool defective_clique::check_solution(graph* g, const std::vector<uint>& res) co
       if(g->is_edge(res[i],res[j]))
         edges++;
   return edges >= (res.size()*(res.size()-1)/2 - s);
+}
+verifier* defective_clique::clone() const
+{
+  return new defective_clique(*this);
 }
 
 //s-plex
@@ -197,6 +213,10 @@ void plex::undo_aux(graph* g, const std::vector<uint>& p, uint j, const std::vec
   level--;
 }
 void plex::free_aux() { level = 0; }
+verifier* plex::clone() const
+{
+  return new plex(*this);
+}
 
 //maximum forest subgraph
 bool forest::check_pair(graph* g, uint i, uint j) const { return true; }
@@ -267,6 +287,11 @@ void forest::init_aux(graph* g, uint i, const std::vector<uint>& c)
   s.resize(g->nr_nodes);
 }
 
+verifier* forest::clone() const
+{
+  return new forest(*this);
+}
+
 //bipartite
 bool bipartite::check_pair(graph* g, uint i, uint j) const { return true; }
 bool bipartite::check(graph* g, const std::vector<uint>& p, uint n)
@@ -306,4 +331,80 @@ void bipartite::init_aux(graph* g, uint i, const std::vector<uint>& c)
 {
   s.resize(g->nr_nodes);
   color.resize(g->nr_nodes);
+}
+
+verifier* bipartite::clone() const
+{
+  return new bipartite(*this);
+}
+
+// pair is always a 1-wide
+bool swide::check_pair(graph* g, uint i, uint j) const { return true; }
+bool swide::check(graph* g, const std::vector<uint>& p, uint n)
+{
+  uint nr_ends = 0;
+  for(uint i = 0; nr_ends < 3 && i < p.size(); ++i)
+    if(g->is_edge(p[i], n))
+    {
+      if(!is_end[p[i]])
+        return false;
+      else
+        nr_ends++;
+    }
+  return (nr_ends < 3);
+}
+
+void swide::init_aux(graph* g, uint n, const std::vector<uint>& c)
+{
+  is_end.resize(g->nr_nodes);
+  for(uint i = 0; i < g->nr_nodes; ++i)
+    is_end[i] = 0;
+  is_end[n] = 1;
+}
+
+void swide::prepare_aux(graph*g, const std::vector<uint>& p, uint n, const std::vector<uint>& c)
+{
+  uint nr_ends = 0;
+  uint v_end[2];
+  for(uint i = 0; nr_ends < 3 && i < p.size(); ++i)
+  {
+    if(g->is_edge(p[i], n) && is_end[p[i]])
+    {
+        v_end[nr_ends] = p[i];
+        nr_ends++;
+    }
+    if(nr_ends == 2)
+      break;
+  }
+//  assert(nr_ends < 3);
+  if(nr_ends == 1) // only change ends if 1
+  {
+    is_end[v_end[0]] = 0;
+    is_end[n] = 1;
+  }
+  if(nr_ends == 2)
+  {
+    is_end[v_end[0]] = 0; is_end[v_end[1]] = 0;
+  }
+}
+
+void swide::undo_aux(graph* g, const std::vector<uint>& p, uint n, const std::vector<uint>& c)
+{
+  uint nr_ends = 0;
+  is_end[n] = 0;
+  for(uint i = 0; i < p.size(); ++i)
+  {
+    if(g->is_edge(p[i], n))
+    {
+      is_end[p[i]] = 1;
+      nr_ends++;
+    }
+    if(nr_ends == 2)
+      break;
+  }
+}
+
+verifier* swide::clone() const
+{
+  return new swide(*this);
 }

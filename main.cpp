@@ -2,6 +2,7 @@
 #include <string>
 #include <algorithm>
 #include <csignal>
+#include <cstdlib>
 #include "rds.h"
 #include "graph.h"
 #include "verifier.h"
@@ -13,8 +14,10 @@ void show_usage(const char* argv)
   printf("Usage: %s [options] <dimacs input file>\nAvailable options:\n", argv);
   printf("\t-t\tTime limit in seconds (optional)\n");
   printf("\t-h|-?\tdisplay this help\n");
+  printf("\t-weights <weights file>\n");
+  printf("\t-comp\tuse graph complement\n");
   printf("Maximum Solvers:\n\t-c\tClique\n\t-s\tStable set\n\t-d s\ts-defective clique\n");
-  printf("\t-p s\ts-plex\n\t-iuc\tIndependent Union of Cliques\n\t-f\tForest\n\t-b\tBipartite\n");
+  printf("\t-p s\ts-plex\n\t-iuc\tIndependent Union of Cliques\n\t-f\tForest\n\t-b\tBipartite\n\t-w\ts-wide");
   printf("Vertex ordering:\n");
   printf("\t-vd\tdegree from large to small\n");
   printf("\t-vd2\t2-neighborhood from large to small\n");
@@ -55,6 +58,7 @@ int main(int argc, char* argv[])
       else if (string(argv[i]) == "-f") { if(v) delete v; v = new forest(); i++; }
       else if (string(argv[i]) == "-b") { if(v) delete v; v = new bipartite(); i++; }
       else if (string(argv[i]) == "-iuc") { if(v) delete v; v = new iuc(); }
+      else if (string(argv[i]) == "-w") { if(v) delete v; v = new swide(atoi(argv[i+1])); i++; }
 
       else if (string(argv[i]) == "-vd") { g->reorder_degree(); }
       else if (string(argv[i]) == "-vd2") { g->reorder_2nb(); }
@@ -64,6 +68,8 @@ int main(int argc, char* argv[])
       else if (string(argv[i]) == "-vrev") { g->reorder_rev(); }
 
       else if (string(argv[i]) == "-t") { time_lim = atoi(argv[i+1]); i++; }
+      else if (string(argv[i]) == "-comp") { graph* g_c = g->complement(); delete g; g = g_c; }
+      else if (string(argv[i]) == "-weights") { g->read_weights(argv[i+1]); i++; }
       else {
           fprintf(stderr, "Wrong parameter: %s\n", argv[i]);
           if(v) delete v; delete g; return 1;
@@ -76,7 +82,7 @@ int main(int argc, char* argv[])
     }
     vector<uint> res_p;
     uint res = rds(v, g, res_p, time_lim);
-/*    printf("Solution verification: ");
+    printf("Solution verification: ");
     if(v->check_solution(g, res_p))
       printf("CORRECT\n");
     else
@@ -88,7 +94,7 @@ int main(int argc, char* argv[])
     for(uint i = 0; i < res_p.size(); ++i)
       printf("%u ", res_p[i]+1);
     printf("\nRDS returned res = %d\n", res);
-*/
+
 /*    printf("Graph:\n");
     for(uint i = 0; i < res_p.size(); ++i)
       for(uint j = i+1; j < res_p.size(); ++j)
