@@ -238,9 +238,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         lb = 0;
         for(int j = g->nr_nodes-1; j > current_work; --j)
         {
-          if(mu[j] <= 0)
-            break;
-          lb = max(lb.load(), mu[j]);
+          lb = max(lb.load(), abs(mu[j]));
         }
 
         //NOW RDS-SERIAL CODE FOLLOWS
