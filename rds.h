@@ -3,7 +3,7 @@
 
 #include <vector>
 #include "graph.h"
-#include "verifier.h"
+#include "verifiers/verifier.hpp"
 
 typedef unsigned int uint;
 

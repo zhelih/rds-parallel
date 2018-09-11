@@ -91,12 +91,12 @@ void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
     weight_c[level] -= g->weight(i);
 //    NB: exploit that we adding only 1 vertex to p
 //    thus verifier can prepare some info using prev calculations
-    v->prepare_aux(g, p, i, c[level]);
+    v->prepare_aux(p, i, c[level]);
     p.push_back(i); weight_p += g->weight(i);
     c[level+1].resize(0); weight_c[level+1] = 0;
     for(uint it2 = c_i; it2 < c[level].size(); ++it2)
     {
-      if(c[level][it2] != i && v->check(g, p, c[level][it2]))
+      if(c[level][it2] != i && v->check(p, c[level][it2]))
       {
         c[level+1].push_back(c[level][it2]);
         weight_c[level+1] += g->weight(c[level][it2]);
@@ -104,7 +104,7 @@ void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
     }
     find_max(c, weight_c, p, weight_p, mu, v, g, res, level+1, start, time_lim);
     p.pop_back(); weight_p -= g->weight(i);
-    v->undo_aux(g, p, i, c[level]);
+    v->undo_aux(p, i, c[level]);
   }
   return;
 }
@@ -131,6 +131,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
     // wait for slave to load and report readiness
     for(int i = 1; i < world_size; ++i)
       MPI_Recv(NULL, 0, MPI_BYTE, i, READYTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    printf("Using %d slaves\n", world_size);
     printf("All slaves are ready!\n");
     int cur_node = n-1;
     int rec_left = cur_node;
@@ -187,6 +188,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
        fprintf(f, "mu[%d] = %d\n", j, mu[j]);
      fclose(f);
      printf("Master done, result is %u\n", mu[0]);
+     MPI_Finalize();
+     return mu[0];
   } else { // slave
     MPI_Send(NULL, 0, MPI_BYTE, 0, READYTAG, MPI_COMM_WORLD);
 
@@ -201,7 +204,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
 
       vector<vector<uint> > c(g->nr_nodes); vector<uint> weight_c(g->nr_nodes, 0);
       vector<uint> p; uint weight_p = 0;
-
+      int i;
       switch(st.MPI_TAG)
       {
       case EXITTAG:
@@ -243,7 +246,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
 
         //NOW RDS-SERIAL CODE FOLLOWS
         //FIXME FACTOR
-        int i = current_work;
+        i = current_work;
         // form candidate set
         // take vertices from v \in {i+1, n} for which pair (i,v) satisfies \Pi
         // first iteration c is empty, that must set bound to 1
@@ -254,7 +257,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         }
         for(uint j = i+1; j < n; ++j)
         {
-          if(v->check_pair(g, i, j))
+          if(v->check_pair(i, j))
           {
             // add to C
             c[0].push_back(j);
@@ -279,7 +282,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         {
           // clone for separate threads
           verifier* v_ = v->clone();
-          v_->init_aux(g, i, c[0]);
+          v_->init_aux(i, c[0]);
           vector<vector<uint> > c_(c); vector<uint> weight_c_(weight_c);
           vector<uint> p_(p); uint weight_p_ = weight_p;
 
@@ -306,12 +309,12 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
               mu_i = lb.load();
               break;
             } else {
-              v_->prepare_aux(g, p_, i_, c_[0]);
+              v_->prepare_aux(p_, i_, c_[0]);
               p_.push_back(i_); weight_p_ += g->weight(i_);
               c_[1].resize(0); weight_c_[1] = 0;
               for(uint it2 = c_i; it2 < c_[0].size(); ++it2)
               {
-                if(c_[0][it2] != i_ && v_->check(g, p_, c_[0][it2])) //TODO only swap check?
+                if(c_[0][it2] != i_ && v_->check(p_, c_[0][it2])) //TODO only swap check?
                 {
                   c_[1].push_back(c_[0][it2]);
                   weight_c_[1] += g->weight(c_[0][it2]);
@@ -319,7 +322,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
               }
               find_max(c_, weight_c_, p_, weight_p_, mu, v_, g, res, 1, start, time_lim);
               p_.pop_back(); weight_p_ -= g->weight(i_);
-              v_->undo_aux(g, p_, i_, c_[0]);
+              v_->undo_aux(p_, i_, c_[0]);
             }
           }
           mu_i = lb.load();
@@ -343,6 +346,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         break;
       } // switch
     } // while
+    MPI_Finalize();
   } // world_rank
   delete [] mu;
   return 0;

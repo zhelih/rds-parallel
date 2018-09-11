@@ -19,8 +19,8 @@ class graph
   graph(uint n);
   ~graph();
   void add_edge(uint i, uint j);
-  inline bool is_edge(uint i, uint j) {return adj[i][j];} 
-  inline uint weight(uint i) { return weights[i]; }
+  inline bool is_edge(uint i, uint j) const {return adj[i][j];} 
+  inline uint weight(uint i) const { return weights[i]; }
   //void set_weight(uint i, uint w) { weights[i] = w; }
   // note: reordering might take a bit of time
   // do before RDS
@@ -32,7 +32,7 @@ class graph
   void reorder_none(); // don't reorder anything
   void reorder_rev(); // revert the order of vertices (usually used to change from small to large)
   void restore_order(std::vector<uint>& v);
-
+  
   std::vector<uint> reverse_order(const std::vector<uint>& order) const;
 
   graph* complement() const;
