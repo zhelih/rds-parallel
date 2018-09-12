@@ -3,6 +3,9 @@
 #include "verifier.hpp"
 
 class Stable: public RegisterVerifier<Stable> {
+  private:
+    static Stable instance;
+
   public:
     bool check_pair(uint i, uint j) const {
       return !g->is_edge(i,j);
@@ -39,5 +42,7 @@ class Stable: public RegisterVerifier<Stable> {
         return new Stable();
     }
 };
+
+Stable Stable::instance = Stable();
 
 #endif

@@ -3,10 +3,12 @@
 #include "verifier.hpp"
 
 class Chordal: public RegisterVerifier<Chordal> {
-  std::vector<std::vector<unsigned int>> colors;
-  std::vector<unsigned int> colors_to_update;
+  private:
+    static Chordal instance;
+    std::vector<std::vector<unsigned int>> colors;
+    std::vector<unsigned int> colors_to_update;
 
-  unsigned int level = 0;
+    unsigned int level = 0;
 
   public:
     bool check_pair(uint i, uint j) const {
@@ -143,5 +145,7 @@ class Chordal: public RegisterVerifier<Chordal> {
         return new Chordal(*this);
     }
 };
+
+Chordal Chordal::instance = Chordal();
 
 #endif

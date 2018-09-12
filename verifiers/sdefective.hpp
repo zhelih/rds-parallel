@@ -4,6 +4,7 @@
 
 class SDefective: public RegisterVerifier<SDefective> {
   private:
+    static SDefective instance;
     uint s, level, nnv;
     std::vector<std::vector<uint>> nncnt;
 
@@ -71,5 +72,7 @@ class SDefective: public RegisterVerifier<SDefective> {
         return new SDefective(*this);
     }
 };
+
+SDefective SDefective::instance = SDefective();
 
 #endif

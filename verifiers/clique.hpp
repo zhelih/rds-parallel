@@ -3,6 +3,9 @@
 #include "verifier.hpp"
 
 class Clique: public RegisterVerifier<Clique> {
+  private:
+    static Clique instance;
+
   public:
     bool check_pair(uint i, uint j) const {
       return g->is_edge(i,j);
@@ -36,5 +39,7 @@ class Clique: public RegisterVerifier<Clique> {
         return new Clique(*this);
     }
 };
+
+Clique Clique::instance = Clique();
 
 #endif

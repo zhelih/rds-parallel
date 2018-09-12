@@ -5,6 +5,7 @@
 
 class SPlex: public RegisterVerifier<SPlex> {
   private:
+    static SPlex instance;
     uint s, level, nr_sat;
     std::vector<uint> sat;
     std::vector<std::vector<uint>> nncnt;
@@ -102,5 +103,7 @@ class SPlex: public RegisterVerifier<SPlex> {
         return new SPlex(*this);
     }
 };
+
+SPlex SPlex::instance = SPlex();
 
 #endif

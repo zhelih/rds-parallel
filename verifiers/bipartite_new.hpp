@@ -9,6 +9,7 @@
 
 class BipartiteNew: public RegisterVerifier<BipartiteNew> {
   private:
+    static BipartiteNew instance;
     mutable std::vector<bool> connected;
     mutable std::vector<std::vector<unsigned int>> p;
     std::vector<std::vector<int>> second_part;
@@ -113,5 +114,7 @@ class BipartiteNew: public RegisterVerifier<BipartiteNew> {
         return new BipartiteNew(*this);
     }
 };
+
+BipartiteNew BipartiteNew::instance = BipartiteNew();
 
 #endif

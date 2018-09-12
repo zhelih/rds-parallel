@@ -5,6 +5,7 @@
 
 class ForestNew: public RegisterVerifier<ForestNew> {
   private:
+    static ForestNew instance;
     mutable std::vector<bool> connected;
     mutable std::vector<std::vector<unsigned int>> p;
     unsigned int level;
@@ -113,5 +114,7 @@ class ForestNew: public RegisterVerifier<ForestNew> {
         return new ForestNew(*this);
     }
 };
+
+ForestNew ForestNew::instance = ForestNew();
 
 #endif

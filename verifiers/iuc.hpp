@@ -3,6 +3,9 @@
 #include "verifier.hpp"
 
 class IUC: public RegisterVerifier<IUC> {
+  private:
+    static IUC instance;
+
   public:
     bool check_pair(uint i, uint j) const {
       return true;
@@ -40,5 +43,7 @@ class IUC: public RegisterVerifier<IUC> {
         return new IUC(*this);
     }
 };
+
+IUC IUC::instance = IUC();
 
 #endif

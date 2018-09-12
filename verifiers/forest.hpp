@@ -5,6 +5,7 @@
 
 class Forest: public RegisterVerifier<Forest> {
   private:
+    static Forest instance;
     mutable std::vector<uint> color, parent, s;
 
   public:
@@ -82,5 +83,7 @@ class Forest: public RegisterVerifier<Forest> {
         return new Forest(*this);
     }
 };
+
+Forest Forest::instance = Forest();
 
 #endif

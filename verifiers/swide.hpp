@@ -5,6 +5,7 @@
 
 class SWide: public RegisterVerifier<SWide> {
   private:
+    static SWide instance;
     uint s;
     std::vector<uint> is_end;
 
@@ -83,5 +84,7 @@ class SWide: public RegisterVerifier<SWide> {
         return new SWide(*this);
     }
 };
+
+SWide SWide::instance = SWide();
 
 #endif

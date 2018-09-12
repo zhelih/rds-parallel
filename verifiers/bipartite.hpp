@@ -5,6 +5,7 @@
 
 class Bipartite: public RegisterVerifier<Bipartite> {
   private:
+    static Bipartite instance;
     mutable std::vector<uint> color, s;
 
   public:
@@ -59,6 +60,6 @@ class Bipartite: public RegisterVerifier<Bipartite> {
     }
 };
 
-auto b = Bipartite();
+Bipartite Bipartite::instance = Bipartite();
 
 #endif
