@@ -28,8 +28,8 @@ class Chordal: public RegisterVerifier<Chordal> {
         cnt_bottom[i] = 0;
       }
 
-      for(auto& v: p) {
-        for(auto& u: p) {
+      for(uint v: p) {
+        for(uint u: p) {
           if (v == u) {
             continue;
           }
@@ -48,7 +48,7 @@ class Chordal: public RegisterVerifier<Chordal> {
 //            printf("cnt_bottom[%d] now is %d\n", v+1, cnt_bottom[v]);
             continue;
           }
-          
+
           if (colors[level][v] == colors[level][u]) {
 //            printf("Verdict: (%d, %d, %d) is a claw. Solve it later\n", v+1, n+1, u+1);
             continue;
@@ -56,8 +56,8 @@ class Chordal: public RegisterVerifier<Chordal> {
         }
       }
 
-      for(auto& v: p) {
-        for(auto& u: p) {
+      for(uint v: p) {
+        for(uint u: p) {
           if (v == u) {
             continue;
           }
@@ -71,8 +71,8 @@ class Chordal: public RegisterVerifier<Chordal> {
         }
       }
 
-      for(auto& v: p) {
-        for(auto& u: p) {
+      for(uint v: p) {
+        for(uint u: p) {
           if (v == u) {
             continue;
           }
@@ -85,7 +85,7 @@ class Chordal: public RegisterVerifier<Chordal> {
           }
         }
       }
-      
+
 //      printf("Verdict: yes\n");
       return true;
     }
@@ -102,7 +102,7 @@ class Chordal: public RegisterVerifier<Chordal> {
       for(int i = 0; i < g->nr_nodes; ++i) {
         colors[0][i] = i;
       }
-      
+
       colors_to_update.reserve(g->nr_nodes);
     }
 
@@ -111,13 +111,13 @@ class Chordal: public RegisterVerifier<Chordal> {
       ++level;
       colors[level] = colors[level-1];
       colors[level][j] = j;
-      for(auto& v: p) {
+      for(uint v: p) {
         if (g->is_edge(v, j)) {
           colors_to_update.push_back(colors[level][v]);
         }
       }
-      for(auto& c: colors_to_update) {
-        for(auto& ccolor: colors[level]) {
+      for(uint c: colors_to_update) {
+        for(uint& ccolor: colors[level]) {
           if (ccolor == c) {
             ccolor = j;
           }

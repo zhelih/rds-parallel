@@ -45,7 +45,7 @@ class ForestNew: public RegisterVerifier<ForestNew> {
       std::vector<uint> color(g->nr_nodes);
       for(uint i = 0; i < g->nr_nodes; ++i)
         color[i] = 0;
-      for(auto& v: res)
+      for(uint v: res)
         if(color[v] == 0) // undiscovered
         {
           // start BFS from j
@@ -54,7 +54,7 @@ class ForestNew: public RegisterVerifier<ForestNew> {
           {
             std::pair<uint,uint> pair = s.top(); s.pop();
             color[pair.first] = 1;
-            for(auto& u: res)
+            for(uint u: res)
               if(u != pair.second && g->is_edge(pair.first, u)) {
                 if(color[u] == 1)
                   return false;
@@ -91,7 +91,7 @@ class ForestNew: public RegisterVerifier<ForestNew> {
           }
         }
       }
-      
+
       if (newC >= 0) {
         join_p(nextP, newC, j);
       }

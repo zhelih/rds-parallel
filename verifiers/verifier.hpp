@@ -102,8 +102,6 @@ class VerifierManager
       return lastID;
     }
 
-    
-
     verifier *create(uint16_t verid)
     {
       return verifiers[verid]();
