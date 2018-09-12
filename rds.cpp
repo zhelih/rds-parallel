@@ -47,18 +47,19 @@ atomic_bool should_exit (false);
 #define EXITTAG   4
 #define UPDATETAG 5
 
-void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p, uint weight_p, const int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
+void find_max(vector<vertex_set>& c, vertex_set& p, const int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
 {
+  vertex_set& curC = c[level];
   if(should_exit)
     return;
-  if(c[level].size() == 0)
+  if(curC.empty())
   {
-    if(weight_p > lb)
+    if(p.weight > lb)
     {
       #pragma omp critical (lbupdate)
       {
 //      res = p; //copy
-      lb.store(max(lb.load(), weight_p));
+      lb.store(max(lb.load(), p.weight));
       }
       return;
     }
@@ -66,7 +67,8 @@ void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
       return;
   }
 
-  for(uint c_i = 0; c_i < c[level].size(); ++c_i)
+  vertex_set& nextC = c[level+1];
+  for(uint c_i = 0; c_i < curC.size(); ++c_i)
   {
     iter++;
     if(iter % 1000 == 0 && time_lim > 0)
@@ -79,32 +81,35 @@ void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
       }
     }
 
-    if(weight_c[level] + weight_p <= lb) // Prune 1
+    if(curC.weight + p.weight <= lb) // Prune 1
     {
       return;
     }
-    uint i = c[level][c_i];
-    if(mu[i] > 0 && mu[i] + weight_p <= lb) // Prune 2
+
+    uint i = curC[c_i];
+    if(mu[i] > 0 && mu[i] + p.weight <= lb) // Prune 2
     {
       return;
     }
-    weight_c[level] -= g->weight(i);
+
+    curC.weight -= g->weight(i);
 //    NB: exploit that we adding only 1 vertex to p
 //    thus verifier can prepare some info using prev calculations
-    v->prepare_aux(p, i, c[level]);
-    p.push_back(i); weight_p += g->weight(i);
-    c[level+1].resize(0); weight_c[level+1] = 0;
-    for(uint it2 = c_i; it2 < c[level].size(); ++it2)
+    v->prepare_aux(p, i, curC);
+    p.add_vertex(i, g->weight(i));
+    nextC.clear();
+
+    for(uint it2 = c_i; it2 < curC.size(); ++it2)
     {
-      if(c[level][it2] != i && v->check(p, c[level][it2]))
+      uint u = curC[it2];
+      if(u != i && v->check(p, u))
       {
-        c[level+1].push_back(c[level][it2]);
-        weight_c[level+1] += g->weight(c[level][it2]);
+        nextC.add_vertex(u, g->weight(u));
       }
     }
-    find_max(c, weight_c, p, weight_p, mu, v, g, res, level+1, start, time_lim);
-    p.pop_back(); weight_p -= g->weight(i);
-    v->undo_aux(p, i, c[level]);
+    find_max(c, p, mu, v, g, res, level+1, start, time_lim);
+    p.pop_vertex(g->weight(i));
+    v->undo_aux(p, i, curC);
   }
   return;
 }
@@ -202,8 +207,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       MPI_Status st;
       MPI_Recv(&buf, 2, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
 
-      vector<vector<uint> > c(g->nr_nodes); vector<uint> weight_c(g->nr_nodes, 0);
-      vector<uint> p; uint weight_p = 0;
+      vector<vertex_set> c(g->nr_nodes);
+      vertex_set p;
       int i;
       switch(st.MPI_TAG)
       {
@@ -253,26 +258,24 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         for(uint j = 0; j < g->nr_nodes; ++j)
         {
           c[j].reserve(g->nr_nodes);
-          c[j].resize(0);
         }
         for(uint j = i+1; j < n; ++j)
         {
           if(v->check_pair(i, j))
           {
             // add to C
-            c[0].push_back(j);
-            weight_c[0] += g->weight(j);
+            c[0].add_vertex(j, g->weight(j));
           }
         }
-        p.push_back(i); weight_p += g->weight(i);
+        p.add_vertex(i, g->weight(i));
         printf("Slave %d : i = %u, c.size = %lu\n", world_rank, i, c[0].size());
         // run for level = 0 manually with respect to the thread number
-        if(c[0].size() == 0)
+        if(c[0].empty())
         {
-          if(weight_p > lb)
+          if(p.weight > lb)
           {
-            mu[i] = weight_p;
-            lb.store(max(lb.load(), weight_p));
+            mu[i] = p.weight;
+            lb.store(max(lb.load(), p.weight));
 //            res = p;
           }
           else
@@ -283,8 +286,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
           // clone for separate threads
           verifier* v_ = v->clone();
           v_->init_aux(i, c[0]);
-          vector<vector<uint> > c_(c); vector<uint> weight_c_(weight_c);
-          vector<uint> p_(p); uint weight_p_ = weight_p;
+          vector<vertex_set> c_(c);
+          vertex_set p_(p);
 
           uint thread_i = omp_get_thread_num();
           uint num_threads = omp_get_num_threads();
@@ -297,31 +300,31 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
             // we remove nodes [0; c_i), adjust weight accordingly
             for(uint j = 0; j < num_threads; ++j)
               if(c_i >= j+1)
-                weight_c_[0] -= g->weight(c_i - j - 1);
-            if(weight_c_[0] + weight_p_ <= lb) // Prune 1
+                c_[0].weight -= g->weight(c_i - j - 1);
+            if(c_[0].weight + p_.weight <= lb) // Prune 1
             {
               mu_i = lb.load();
               break;
             }
             uint i_ = c_[0][c_i];
-            if(mu[i_] > 0 && mu[i_] + weight_p_ <= lb) // Prune 2
+            if(mu[i_] > 0 && mu[i_] + p_.weight <= lb) // Prune 2
             {
               mu_i = lb.load();
               break;
             } else {
               v_->prepare_aux(p_, i_, c_[0]);
-              p_.push_back(i_); weight_p_ += g->weight(i_);
-              c_[1].resize(0); weight_c_[1] = 0;
+              p_.add_vertex(i_, g->weight(i_));
+              c_[1].clear();
               for(uint it2 = c_i; it2 < c_[0].size(); ++it2)
               {
-                if(c_[0][it2] != i_ && v_->check(p_, c_[0][it2])) //TODO only swap check?
+                uint u = c_[0][it2];
+                if(u != i_ && v_->check(p_, u)) //TODO only swap check?
                 {
-                  c_[1].push_back(c_[0][it2]);
-                  weight_c_[1] += g->weight(c_[0][it2]);
+                  c_[1].add_vertex(u, g->weight(u));
                 }
               }
-              find_max(c_, weight_c_, p_, weight_p_, mu, v_, g, res, 1, start, time_lim);
-              p_.pop_back(); weight_p_ -= g->weight(i_);
+              find_max(c_, p_, mu, v_, g, res, 1, start, time_lim);
+              p_.pop_vertex(g->weight(i_));
               v_->undo_aux(p_, i_, c_[0]);
             }
           }
