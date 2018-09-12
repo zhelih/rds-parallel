@@ -59,4 +59,6 @@ class Bipartite: public RegisterVerifier<Bipartite> {
     }
 };
 
+auto b = Bipartite();
+
 #endif
