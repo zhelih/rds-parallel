@@ -91,6 +91,46 @@ class Chordal: public RegisterVerifier<Chordal> {
     }
 
     bool check_solution(const std::vector<uint>& res) const {
+      std::vector<uint> res_n = res;
+/*    printf("\n Vertices in solution: {");
+      for(auto v: res_n) printf("%d, ", v);
+      printf("\b\b}\n");
+*/
+      for(uint i = 0; i < res.size()-1; ++i) {
+        bool simplical_found = false;
+        for(uint j = i+1; j < res.size(); ++j) {
+          uint v = res_n[j];
+//          printf("checking if vertex %d is simplicial \n", v);
+          bool v_ok = true;
+
+          for(uint z_1 = j+1; z_1 < res.size(); ++z_1) {
+            uint z_1_v = res_n[z_1];
+            if (!g->is_edge(v, z_1_v)) continue;
+
+            for(uint z_2 = z_1 + 1; z_2 < res.size(); ++z_2) {
+              uint z_2_v = res_n[z_2];
+              if (!g->is_edge(v, z_2_v)) {
+                continue;
+              }
+              if (!g->is_edge(z_1_v, z_2_v)) {
+                v_ok = false;
+                break;
+              }
+            }
+            
+            if (!v_ok) break;	
+          }
+
+          if (v_ok) {
+//            printf("Vertex %d is simplicial\n", v);
+            std::swap(res_n[i], res_n[j]);
+            simplical_found = true;
+            break;
+          }
+        }
+//        printf("Vertex %d: simplicial_found is %d\n", res_n[i], simplical_found);
+        if (!simplical_found) return false;
+      }
       return true;
     }
 
