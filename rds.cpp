@@ -57,7 +57,7 @@ void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
     {
       #pragma omp critical (lbupdate)
       {
-//      res = p; //copy
+      res = p; //copy
       lb.store(max(lb.load(), weight_p));
       }
       return;
@@ -109,7 +109,7 @@ void find_max(vector<vector <uint> >& c, vector<uint>& weight_c, vector<uint>& p
   return;
 }
 
-uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
+uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out)
 {
   MPI_Init(NULL, NULL);
   int world_size;
@@ -209,12 +209,14 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
       {
       case EXITTAG:
         should_exit = true;
-        printf("Slave %d : exiting...\n", world_rank);
+        if(slave_out)
+          printf("Slave %d : exiting...\n", world_rank);
         break;
       case UPDATETAG:
         // update mu
         mu[buf[0]] = buf[1];
-        printf("Slave %d : bound update, now mu[%d] = %d\n", world_rank, buf[0], buf[1]);
+        if(slave_out)
+          printf("Slave %d : bound update, now mu[%d] = %d\n", world_rank, buf[0], buf[1]);
         if(mu[g->nr_nodes-1] < 0)
           mu[g->nr_nodes-1] = -mu[g->nr_nodes-1];
         // update all -1
@@ -229,12 +231,15 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         }
         break;
       case WORKTAG:
-        printf("Slave %d : received work %d\n", world_rank, buf[0]);
+        if(slave_out)
+          printf("Slave %d : received work %d\n", world_rank, buf[0]);
         current_work = buf[0];
+        if(slave_out) {
         #pragma omp parallel
         {
           #pragma omp single
           printf("Slave %d : Using up to %d threads (OMP)\n", world_rank, omp_get_num_threads()); //FIXME might change in the future
+        }
         }
 
         //NB: SMART recomputing of LB
@@ -265,7 +270,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
           }
         }
         p.push_back(i); weight_p += g->weight(i);
-        printf("Slave %d : i = %u, c.size = %lu\n", world_rank, i, c[0].size());
+        if(slave_out)
+          printf("Slave %d : i = %u, c.size = %lu\n", world_rank, i, c[0].size());
         // run for level = 0 manually with respect to the thread number
         if(c[0].size() == 0)
         {
@@ -335,7 +341,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim)
         } // pragma omp parallel
         } // else
         mu[i] = -mu[i];
-        printf("Slave %d : calculated mu[%d] = %d\n", world_rank, i, mu[i]);
+        if(slave_out)
+          printf("Slave %d : calculated mu[%d] = %d\n", world_rank, i, mu[i]);
         int buf[2];
         buf[0] = i;
         buf[1] = mu[i];

@@ -11,7 +11,6 @@ using namespace std;
 
 void show_usage(const char* argv)
 {
-  
   printf("Usage: %s [options] <dimacs input file>\nAvailable options:\n", argv);
   printf("\t-t\tTime limit in seconds (optional)\n");
   printf("\t-h|-?\tdisplay this help\n");
@@ -105,6 +104,7 @@ int main(int argc, char* argv[])
   }
   verifier* v = nullptr;
   uint time_lim = 0;
+  bool slave_out = false;
   for(int i = 1; i < argc-1; ++i)
   {
     // so ugly, but switch refuses to compare strings
@@ -117,6 +117,7 @@ int main(int argc, char* argv[])
     if (arg == "-t") { time_lim = atoi(argv[i+1]); i++; }
     else if (arg == "-comp") { graph* g_c = g->complement(); delete g; g = g_c; }
     else if (arg == "-weights") { g->read_weights(argv[i+1]); i++; }
+    else if (arg == "-verbose") { slave_out = true; }
     else {
         fprintf(stderr, "Wrong parameter: %s\n", argv[i]);
         delete v;
@@ -133,15 +134,16 @@ int main(int argc, char* argv[])
 
   v->bind_graph(g);
   vector<uint> res_p;
-  uint res = rds(v, g, res_p, time_lim);
+  uint res = rds(v, g, res_p, time_lim, slave_out);
   verify_solution(v, res_p);
   g->restore_order(res_p);
   sort(res_p.begin(), res_p.end());
   pr_();
+
   printf("Solution:\n");
   for(uint i = 0; i < res_p.size(); ++i)
     printf("%u ", res_p[i]+1);
-  printf("\nRDS returned res = %d\n", res);
+  printf("\nRDS returned res = %lu\n", res_p.size());
 
 /*    printf("Graph:\n");
   for(uint i = 0; i < res_p.size(); ++i)
