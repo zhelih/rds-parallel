@@ -36,7 +36,7 @@ class BipartiteNew: public RegisterVerifier<BipartiteNew> {
       connected.assign(g->nr_nodes, false);
       auto& currentP = p[level];
       auto& currentSP = second_part[level];
-      for(auto& v: P) {
+      for(uint v: P) {
         if(g->is_edge(v, n)) {
           unsigned int actualV = get_p(currentP, v);
           connected[actualV] = true;
@@ -75,7 +75,7 @@ class BipartiteNew: public RegisterVerifier<BipartiteNew> {
       nextP = currentP;
       nextSP = currentSP;
       int newC = -1;
-      for(auto& v: P) {
+      for(uint v: P) {
         if (g->is_edge(v, j)) {
           if (currentSP[v] == -1) {
             nextSP[v] = j;
@@ -90,7 +90,7 @@ class BipartiteNew: public RegisterVerifier<BipartiteNew> {
           }
         }
       }
-      
+
       if (newC >= 0) {
         join_p(nextP, nextSP[newC], j);
         nextSP[j] = newC;

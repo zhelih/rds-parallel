@@ -14,7 +14,7 @@ class Forest: public RegisterVerifier<Forest> {
     }
 
     bool check(const std::vector<uint>& p, uint n) const {
-      for(auto& v: p)
+      for(uint v: p)
         color[v] = 0;
       uint stack_size = 0;
       s[stack_size++] = n;
@@ -25,7 +25,7 @@ class Forest: public RegisterVerifier<Forest> {
         color[v] = 1;
         if(n != parent[v] && g->is_edge(v, n))
           return false;
-        for(auto& u: p) {
+        for(uint u: p) {
           if(u != parent[v] && g->is_edge(v, u))
           {
             if(color[u] == 1)
@@ -46,7 +46,7 @@ class Forest: public RegisterVerifier<Forest> {
       std::vector<uint> color(g->nr_nodes);
       for(uint i = 0; i < g->nr_nodes; ++i)
         color[i] = 0;
-      for(auto& v: res)
+      for(uint v: res)
         if(color[v] == 0) // undiscovered
         {
           // start BFS from j
@@ -55,7 +55,7 @@ class Forest: public RegisterVerifier<Forest> {
           {
             std::pair<uint,uint> pair = s.top(); s.pop();
             color[pair.first] = 1;
-            for(auto& u: res)
+            for(uint u: res)
               if(u != pair.second && g->is_edge(pair.first, u)) {
                 if(color[u] == 1)
                   return false;

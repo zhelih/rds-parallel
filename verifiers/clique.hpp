@@ -12,15 +12,15 @@ class Clique: public RegisterVerifier<Clique> {
     }
 
     bool check(const std::vector<uint>& p, uint n) const {
-      for(auto& v: p)
+      for(uint v: p)
         if(!g->is_edge(v, n))
          return false;
       return true;
     }
 
     bool check_solution(const std::vector<uint>& res) const {
-      for (auto& v: res) {
-        for (auto& u: res) {
+      for (uint v: res) {
+        for (uint u: res) {
           if (v != u && !g->is_edge(v, u)) {
             return false;
           }
