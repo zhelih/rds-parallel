@@ -47,7 +47,24 @@ atomic_bool should_exit (false);
 #define EXITTAG   4
 #define UPDATETAG 5
 
-void find_max(vector<vertex_set>& c, vertex_set& p, const int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
+inline void update_mu(graph* g, int* mu, uint buf0, uint buf1)
+{
+  mu[buf0] = buf1;
+  if(mu[g->nr_nodes-1] < 0)
+    mu[g->nr_nodes-1] = -mu[g->nr_nodes-1];
+  // update all -1
+  for(int j = g->nr_nodes-2; j >= 0; --j)
+  {
+    if(mu[j] > 0 && mu[j+1] > 0)
+      continue;
+    if(mu[j] < 0 && mu[j+1] > 0)
+      mu[j] = max(mu[j+1], -mu[j]);
+    else
+      break;
+  }
+}
+
+void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
 {
   vertex_set& curC = c[level];
   if(should_exit)
@@ -78,6 +95,19 @@ void find_max(vector<vertex_set>& c, vertex_set& p, const int* mu, verifier *v, 
       {
         should_exit = true;
         return;
+      }
+      int flag = false;
+      MPI_Iprobe(0, UPDATETAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); // TODO EXITTAG
+      if(flag)
+      {
+        // process UPDATETAG
+        int buf[2];
+        MPI_Recv(&buf, 2, MPI_INT, 0, UPDATETAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        fprintf(stderr, "Slave : Got a fancy mu update mu[%d] = %d!\n", buf[0], buf[1]);
+        #pragma omp critical (muupdate)
+        {
+          update_mu(g, mu, buf[0], buf[1]);
+        }
       }
     }
 
@@ -114,6 +144,8 @@ void find_max(vector<vertex_set>& c, vertex_set& p, const int* mu, verifier *v, 
   return;
 }
 
+
+
 uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out)
 {
   MPI_Init(NULL, NULL);
@@ -121,6 +153,12 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   int world_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
+  if(world_size < 2)
+  {
+    fprintf(stderr, "MPI program requires at least 2 nodes (got %d), bailing out...\n", world_size);
+    return 0;
+  }
   chrono::time_point<chrono::steady_clock> start = chrono::steady_clock::now(); // C++11 only
   should_exit = false;
   uint n = g->nr_nodes;
@@ -133,10 +171,10 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
   int i;
   if(world_rank == 0) // master
   {
+    printf("Using %d slaves\n", world_size);
     // wait for slave to load and report readiness
     for(int i = 1; i < world_size; ++i)
       MPI_Recv(NULL, 0, MPI_BYTE, i, READYTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    printf("Using %d slaves\n", world_size);
     printf("All slaves are ready!\n");
     int cur_node = n-1;
     int rec_left = cur_node;
@@ -159,8 +197,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
       //FIXME non-blockingly
       for(int i = 1; i < world_size; ++i)
       {
-        if(i == st.MPI_SOURCE)
-          continue;
+/*        if(i == st.MPI_SOURCE)
+          continue;*/
         MPI_Send(&buf, 2, MPI_INT, i, UPDATETAG, MPI_COMM_WORLD);
       }
       // if there are more jobs, send to this slave
@@ -201,6 +239,14 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
     int current_work = -1;
     lb = 0;
 
+    if(slave_out) {
+    #pragma omp parallel
+    {
+      #pragma omp single
+      printf("Slave %d : Using up to %d threads (OMP)\n", world_rank, omp_get_num_threads()); //FIXME might change in the future
+    }
+    }
+
     while(!should_exit)
     {
       int buf[2];
@@ -219,34 +265,14 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
         break;
       case UPDATETAG:
         // update mu
-        mu[buf[0]] = buf[1];
+        update_mu(g, mu, buf[0], buf[1]);
         if(slave_out)
           printf("Slave %d : bound update, now mu[%d] = %d\n", world_rank, buf[0], buf[1]);
-        if(mu[g->nr_nodes-1] < 0)
-          mu[g->nr_nodes-1] = -mu[g->nr_nodes-1];
-        // update all -1
-        for(int j = g->nr_nodes-2; j >= 0; --j)
-        {
-          if(mu[j] > 0 && mu[j+1] > 0)
-            continue;
-          if(mu[j] < 0 && mu[j+1] > 0)
-            mu[j] = max(mu[j+1], -mu[j]);
-          else
-            break;
-        }
         break;
       case WORKTAG:
         if(slave_out)
           printf("Slave %d : received work %d\n", world_rank, buf[0]);
         current_work = buf[0];
-        if(slave_out) {
-        #pragma omp parallel
-        {
-          #pragma omp single
-          printf("Slave %d : Using up to %d threads (OMP)\n", world_rank, omp_get_num_threads()); //FIXME might change in the future
-        }
-        }
-
         //NB: SMART recomputing of LB
         lb = 0;
         for(int j = g->nr_nodes-1; j > current_work; --j)
