@@ -47,7 +47,7 @@ atomic_bool should_exit (false);
 #define EXITTAG   4
 #define UPDATETAG 5
 
-inline void update_mu(graph* g, int* mu, uint buf0, uint buf1)
+inline void update_mu(graph* g, int* mu, int buf0, int buf1)
 {
   mu[buf0] = buf1;
   if(mu[g->nr_nodes-1] < 0)
@@ -66,6 +66,8 @@ inline void update_mu(graph* g, int* mu, uint buf0, uint buf1)
 
 void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
 {
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   vertex_set& curC = c[level];
   if(should_exit)
     return;
@@ -96,14 +98,16 @@ void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph*
         should_exit = true;
         return;
       }
-      int flag = false;
-      MPI_Iprobe(0, UPDATETAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); // TODO EXITTAG
+      int flag = 0;
+      MPI_Status st;
+      auto error = MPI_Iprobe(0, UPDATETAG, MPI_COMM_WORLD, &flag, &st); // TODO EXITTAG
       if(flag)
       {
+        fprintf(stderr, "Slave %d probe: Flag value was %d, error code was %d (%d), MPI_status is: SOURCE = %d, TAG = %d, ERROR = %d\n", world_rank, flag, error, MPI_SUCCESS, st.MPI_SOURCE, st.MPI_TAG, st.MPI_ERROR);
         // process UPDATETAG
-        int buf[2];
-        MPI_Recv(&buf, 2, MPI_INT, 0, UPDATETAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        fprintf(stderr, "Slave : Got a fancy mu update mu[%d] = %d!\n", buf[0], buf[1]);
+        int32_t buf[2];
+        MPI_Recv(buf, 2, MPI_INT32_T, 0, UPDATETAG, MPI_COMM_WORLD, &st);
+        fprintf(stderr, "Slave %d : Got a fancy mu update mu[%d] = %d!\nSlave %d: MPI_status is: SOURCE = %d, TAG = %d, ERROR = %d\n", world_rank, buf[0], buf[1], world_rank, st.MPI_SOURCE, st.MPI_TAG, st.MPI_ERROR);
         #pragma omp critical (muupdate)
         {
           update_mu(g, mu, buf[0], buf[1]);
@@ -174,22 +178,22 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
     printf("Using %d slaves\n", world_size);
     // wait for slave to load and report readiness
     for(int i = 1; i < world_size; ++i)
-      MPI_Recv(NULL, 0, MPI_BYTE, i, READYTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(NULL, 0, MPI_INT32_T, i, READYTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     printf("All slaves are ready!\n");
-    int cur_node = n-1;
+    int32_t cur_node = n-1;
     int rec_left = cur_node;
     // sending initial tasks
     for(int i = 1; cur_node >= 0 && i < world_size; ++i)
     {
-      MPI_Send(&cur_node, 1, MPI_INT, i, WORKTAG, MPI_COMM_WORLD);
+      MPI_Send(&cur_node, 1, MPI_INT32_T, i, WORKTAG, MPI_COMM_WORLD);
       cur_node--;
     }
     // main loop, dynamic scheduling
     while(cur_node >= 0 || rec_left >= 0)
     {
-      int buf[2];
+      int32_t buf[2];
       MPI_Status st;
-      MPI_Recv(&buf, 2, MPI_INT, MPI_ANY_SOURCE, DONETAG, MPI_COMM_WORLD, &st);
+      MPI_Recv(buf, 2, MPI_INT32_T, MPI_ANY_SOURCE, DONETAG, MPI_COMM_WORLD, &st);
       rec_left--;
       printf("Master : received result from slave %d : mu[%d] = %d\n", st.MPI_SOURCE, buf[0], buf[1]);
       mu[buf[0]] = buf[1];
@@ -199,19 +203,19 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
       {
 /*        if(i == st.MPI_SOURCE)
           continue;*/
-        MPI_Send(&buf, 2, MPI_INT, i, UPDATETAG, MPI_COMM_WORLD);
+        MPI_Send(buf, 2, MPI_INT32_T, i, UPDATETAG, MPI_COMM_WORLD);
       }
       // if there are more jobs, send to this slave
       if(cur_node >= 0)
       {
-        MPI_Send(&cur_node, 1, MPI_INT, st.MPI_SOURCE, WORKTAG, MPI_COMM_WORLD);
+        MPI_Send(&cur_node, 1, MPI_INT32_T, st.MPI_SOURCE, WORKTAG, MPI_COMM_WORLD);
         cur_node--;
       }
     }
 
     // exit
     for(int i = 1; i < world_size; ++i)
-      MPI_Send(NULL, 0, MPI_BYTE, i, EXITTAG, MPI_COMM_WORLD);
+      MPI_Send(NULL, 0, MPI_INT32_T, i, EXITTAG, MPI_COMM_WORLD);
     chrono::duration<double> d = chrono::steady_clock::now() - start;
     printf("Master : rds: time elapsed = %.8lf secs\n", d.count());
     // dumping mu to a file
@@ -232,9 +236,11 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
      fclose(f);
      printf("Master done, result is %u\n", mu[0]);
      MPI_Finalize();
-     return mu[0];
+     int ret = mu[0];
+     delete [] mu;
+     return ret;
   } else { // slave
-    MPI_Send(NULL, 0, MPI_BYTE, 0, READYTAG, MPI_COMM_WORLD);
+    MPI_Send(NULL, 0, MPI_INT32_T, 0, READYTAG, MPI_COMM_WORLD);
 
     int current_work = -1;
     lb = 0;
@@ -249,9 +255,9 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
 
     while(!should_exit)
     {
-      int buf[2];
+      int32_t buf[2];
       MPI_Status st;
-      MPI_Recv(&buf, 2, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+      MPI_Recv(buf, 2, MPI_INT32_T, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
 
       vector<vertex_set> c(g->nr_nodes);
       vertex_set p;
@@ -372,10 +378,10 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
         mu[i] = -mu[i];
         if(slave_out)
           printf("Slave %d : calculated mu[%d] = %d\n", world_rank, i, mu[i]);
-        int buf[2];
+        int32_t buf[2];
         buf[0] = i;
         buf[1] = mu[i];
-        MPI_Send(&buf, 2, MPI_INT, 0, DONETAG, MPI_COMM_WORLD);
+        MPI_Send(buf, 2, MPI_INT32_T, 0, DONETAG, MPI_COMM_WORLD);
         break;
       default:
         printf("Slave %d : wrong mesage tag %d, ingoring...\n", world_rank, st.MPI_TAG);
