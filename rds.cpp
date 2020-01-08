@@ -64,10 +64,9 @@ inline void update_mu(graph* g, int* mu, int buf0, int buf1)
   }
 }
 
-void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim)
+void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph* g, vector<uint>& res, int level, const chrono::time_point<chrono::steady_clock> start, const uint time_lim, int world_rank, int thread_i)
 {
-  int world_rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  //MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   vertex_set& curC = c[level];
   if(should_exit)
     return;
@@ -90,28 +89,36 @@ void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph*
   for(uint c_i = 0; c_i < curC.size(); ++c_i)
   {
     iter++;
-    if(iter % 1000 == 0 && time_lim > 0)
+    if(iter % 1000 == 0)
     {
-      chrono::duration<double> d = chrono::steady_clock::now() - start;
-      if(d.count() >= (double)time_lim)
+      if(time_lim > 0)
       {
-        should_exit = true;
-        return;
+        chrono::duration<double> d = chrono::steady_clock::now() - start;
+        if(d.count() >= (double)time_lim)
+        {
+          should_exit = true;
+	  fprintf(stderr, "Slave %d : exiting by timelim...\n", world_rank); 
+          return;
+        }
       }
+      
+      if(thread_i == 0)
+      {
       int flag = 0;
       MPI_Status st;
       auto error = MPI_Iprobe(0, UPDATETAG, MPI_COMM_WORLD, &flag, &st); // TODO EXITTAG
       if(flag)
       {
-        fprintf(stderr, "Slave %d probe: Flag value was %d, error code was %d (%d), MPI_status is: SOURCE = %d, TAG = %d, ERROR = %d\n", world_rank, flag, error, MPI_SUCCESS, st.MPI_SOURCE, st.MPI_TAG, st.MPI_ERROR);
+        //fprintf(stderr, "Slave %d probe: Flag value was %d, error code was %d (%d), MPI_status is: SOURCE = %d, TAG = %d, ERROR = %d\n", world_rank, flag, error, MPI_SUCCESS, st.MPI_SOURCE, st.MPI_TAG, st.MPI_ERROR);
         // process UPDATETAG
         int32_t buf[2];
         MPI_Recv(buf, 2, MPI_INT32_T, 0, UPDATETAG, MPI_COMM_WORLD, &st);
-        fprintf(stderr, "Slave %d : Got a fancy mu update mu[%d] = %d!\nSlave %d: MPI_status is: SOURCE = %d, TAG = %d, ERROR = %d\n", world_rank, buf[0], buf[1], world_rank, st.MPI_SOURCE, st.MPI_TAG, st.MPI_ERROR);
-        #pragma omp critical (muupdate)
+        //fprintf(stderr, "Slave %d : Got a fancy mu update mu[%d] = %d!\nSlave %d: MPI_status is: SOURCE = %d, TAG = %d, ERROR = %d\n", world_rank, buf[0], buf[1], world_rank, st.MPI_SOURCE, st.MPI_TAG, st.MPI_ERROR);
+        //#pragma omp critical (muupdate)
         {
           update_mu(g, mu, buf[0], buf[1]);
         }
+      }
       }
     }
 
@@ -141,7 +148,7 @@ void find_max(vector<vertex_set>& c, vertex_set& p, int* mu, verifier *v, graph*
         nextC.add_vertex(u, g->weight(u));
       }
     }
-    find_max(c, p, mu, v, g, res, level+1, start, time_lim);
+    find_max(c, p, mu, v, g, res, level+1, start, time_lim, world_rank, thread_i);
     p.pop_vertex(g->weight(i));
     v->undo_aux(p, i, curC);
   }
@@ -195,6 +202,11 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
       MPI_Status st;
       MPI_Recv(buf, 2, MPI_INT32_T, MPI_ANY_SOURCE, DONETAG, MPI_COMM_WORLD, &st);
       rec_left--;
+      if(buf[0] < 0)
+      {
+	printf("Master: slave exit message noticed, exiting...\n");
+        break;
+      }
       printf("Master : received result from slave %d : mu[%d] = %d\n", st.MPI_SOURCE, buf[0], buf[1]);
       mu[buf[0]] = buf[1];
       // now send this data to everybody
@@ -361,7 +373,7 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
                   c_[1].add_vertex(u, g->weight(u));
                 }
               }
-              find_max(c_, p_, mu, v_, g, res, 1, start, time_lim);
+              find_max(c_, p_, mu, v_, g, res, 1, start, time_lim, world_rank, thread_i);
               p_.pop_vertex(g->weight(i_));
               v_->undo_aux(p_, i_, c_[0]);
             }
@@ -381,6 +393,8 @@ uint rds(verifier* v, graph* g, vector<uint>& res, uint time_lim, bool slave_out
         int32_t buf[2];
         buf[0] = i;
         buf[1] = mu[i];
+	if(should_exit)
+	  buf[0] = -1; //FIXME message for breaking
         MPI_Send(buf, 2, MPI_INT32_T, 0, DONETAG, MPI_COMM_WORLD);
         break;
       default:

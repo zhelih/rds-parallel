@@ -135,6 +135,7 @@ int main(int argc, char* argv[])
 
   v->bind_graph(g);
   vector<uint> res_p;
+  printf("Time lim = %d secs\n", time_lim);
   uint res = rds(v, g, res_p, time_lim, slave_out);
   verify_solution(v, res_p);
   g->restore_order(res_p);
